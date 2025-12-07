@@ -1,0 +1,57 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vllm-tpu
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: vllm-tpu
+  template:
+    metadata:
+      labels:
+        app: vllm-tpu
+    spec:
+      serviceAccountName: ksa-demo
+      hostNetwork: true
+      nodeSelector:
+        cloud.google.com/gke-tpu-topology: 2x2
+        cloud.google.com/gke-tpu-accelerator: tpu-v6e-slice
+      containers:
+      - name: vllm-tpu
+        image: vllm/vllm-tpu:latest
+        command: ["python3", "-m", "vllm.entrypoints.openai.api_server"]
+        args:
+        - --host=0.0.0.0
+        - --port=8000
+        - --tensor-parallel-size=4
+        - --max-model-len=4096
+        - --max-num-seqs=128
+        - --model=Qwen/Qwen2.5-32B
+        env: 
+        - name: HUGGING_FACE_HUB_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: hf-secret
+              key: hf_api_token
+        - name: HF_HOME
+          value: "/dev/shm"
+        - name: VLLM_USE_V1
+          value: "1"
+        ports:
+        - containerPort: 8000
+        resources:
+          limits:
+            google.com/tpu: 4
+        readinessProbe:
+          tcpSocket:
+            port: 8000
+          initialDelaySeconds: 15
+          periodSeconds: 10
+        volumeMounts:
+        - name: dshm
+          mountPath: /dev/shm
+      volumes:
+      - name: dshm
+        emptyDir:
+          medium: Memory
